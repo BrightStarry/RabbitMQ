@@ -39,6 +39,7 @@ public class Send {
 		//发送消息
 		String message = "zhengxing";
 
+
 		//发送消息到 自定义的交易所,不指定路由
 		channel.basicPublish(EXCHANGE_NAME, "", null, message.getBytes());
 		log.info("发送消息:{},成功.", message);

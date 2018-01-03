@@ -14,6 +14,7 @@ http://www.rabbitmq.com/documentation.html
 > 系统启动时启动 chkconfig rabbitmq-server on
 > 服务启动 service rabbitmq-server start
 > 服务停止 service rabbitmq-server stop
+> 服务是否启动 service rabbitmq-server  status
 > webSocket插件启用 rabbitmq-plugins enable rabbitmq_web_mqtt
 
 5. 配置文件
@@ -43,6 +44,54 @@ http://www.rabbitmq.com/documentation.html
     ].
 >
 配置成功..好麻烦..特别是这个配置文件的格式.反人类..
+
+#### 分布式
+RabbitMQ的分布式分为三种方式.可以组合使用
+* clustering(集群,需要同一局域网)
+> 将多台机器连接在一起,使用Erlang通信.所有节点需要有相同版本的erlang和rabbitMQ.
+* federation(联邦)
+> 
+    允许单台服务器上的交换机或队列接收发布到另一台服务器上交换机或队列的消息，可以是单独机器或集群。
+    federation队列类似于单向点对点连接，消息会在联盟队列之间转发任意次，直到被消费者接受。
+    通常使用federation来连接internet上的中间服务器，用作订阅分发消息或工作队列。
+>
+* The Shovel(铲子|欲善其事)
+>
+    也是将一个broker队列中的消息转发到另一个交易所上
+>
+
+#### 集群
+集群所需的所有数据/状态都在所有节点上复制,除了队列.默认情况下,队列的数据只保留在一个节点上.尽管它们可以在其他节点上存取.  
+节点间需要通过主机名连接.
+
+1. 三台机器上配置好单机rabbitMQ
+2. 复制其中一个节点的erlang cookie到其他节点(通过它确认是否可以相互通信)   
+/var/lib/rabbitmq/.erlang.cookie或者$HOME/.erlang.cookie  
+注意权限
+
+3. 在各节点机器配置hosts,例如
+>
+    192.168.1.1 node0
+    192.168.1.2 node1
+    192.168.1.3 node2
+>
+4. 建立集群
+>
+    以hidden0为主节点，在node1上： 
+    rabbitmqctl stop_app 
+    rabbitmqctl join_cluster rabbit@node0
+    rabbitmqctl start_app 
+    node2上的操作与node1的雷同
+    
+    查看集群信息
+    rabbitmqctl cluster_status
+>
+
+* 还可以配置队列镜像.因为只是集群的话,队列中的数据仍旧只是在单个节点上.
+![管理界面配置镜像队列](1.png)
+
+
+
 
 #### 简介
 * broker:经纪人,也就是MQ本身.
@@ -366,6 +415,17 @@ mq支持消息确认的模式.如下.创建消费者时.不自动确认.即可
 * 其逻辑就是.调用方在发送的消息属性中,指定回调的队列名和该消息id.然后发送给rpc队列.调用.
 * 远程过程方.就从rpc队列中获取消息.然后执行方法.将结果.带上传入的消息id,传回调用方指定的回调队列即可.
 
+
+#### 事务
+.找遍官方文档,没有找到对事务的介绍.随手看了篇博客...贼简单.
+>
+    //开启事务
+    channel.txSelect();
+    //提交事务
+    channel.txCommit();
+    //回滚事务
+    channel.txRollback();
+>
 
 #### 生产者确认模式
 消费者确认模式是保证每条消息都被消费者成功消费.
