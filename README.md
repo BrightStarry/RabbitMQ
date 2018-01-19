@@ -7,6 +7,30 @@
 该项目全部参考RabbitMQ官网自行学习.有疑问.看文档.  
 http://www.rabbitmq.com/documentation.html
 
+#### 奇淫巧技
+* Spring Boot通过spring.profiles.active配置当前环境后,可在代码中使用@Profile注解,指定哪个类在哪个环境下才能使用 
+> 例如@Profile("dev")表示dev环境可用, @Profile("!dev")表示所有非dev环境都可用
+
+* IDEA: CTRL + E,呼出最近常用文件窗口,并且IDEA可在几乎任何窗口,直接输入单词进行搜索.
+
+* Stopwatch类,记录任务处理时长.在spring/common/guava等依赖中均有提供.此处选择spring依赖中的
+>
+    //计时器
+    StopWatch stopWatch = new StopWatch();
+    //开始计时
+    stopWatch.start();
+    System.out.println("实例:" + instance +" 接收到消息:" + in + " 线程id:" + Thread.currentThread().getId());
+    //模拟长时间消费
+    doWork(in);
+    stopWatch.stop();
+    //输出时间
+    stopWatch.getTotalTimeSeconds() 
+>
+
+#### 新增
+* 如下项目可通过java 查看mq的集群/队列/所有连接/操作队列等
+> https://github.com/rabbitmq/hop
+
 #### Bug
 * 遇到给queueDeclare()方法设置最后的属性Map<String,Object>时,一直报错.后来才发现...我一直把应该为Long的属性传了String.  
 我找了一万年百度...才在一个不知名的国外论坛的一个不知名评论里找到答案....天了噜..  
@@ -759,3 +783,238 @@ x-overflow 指定.默认是drop-head(默认,删除前面,也就是最早的消�
     //设置自动恢复延期处理..表示还需要多久再次进行自动恢复(未测试过,)
     connectionFactory.setRecoveryDelayHandler();
 >   
+
+
+#### Spring AMQP(RabbitMQ实现)
+* 在config-client端导入依赖
+>
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-bus-amqp</artifactId>
+		</dependency>
+>
+* yml参数
+>
+      rabbitmq:
+        host: 106.14.7.29
+        port: 5672
+        # 默认创建一个AmqpAdmin的Bean
+        dynamic:
+        #连接超时时间,毫秒,0表示无限
+        connection-timeout: 3000
+        #请求后的心跳超时时间,秒,0表示没有
+        requested-heartbeat: 5
+        # 启用生产者确认,开启后才能使用publisherConfirms
+        publisher-confirms: true
+        # 启用生产者返回(拒绝),开启后才能使用publisherReturns
+        publisher-returns: true
+        # 缓存
+        cache:
+          # 通道
+          channel:
+            # 如果缓存size满了,获取通道等待的时间,如果为0,总是创建新的通道
+            checkout-timeout: 3000
+            # 缓存中保存的通道个数,check-timeout > 0 时,
+            size: 10
+          # 连接
+          connection:
+            # 连接工厂缓存模式 CONNECTION:在每个连接中缓存connection和channel; Channel:缓存通道,单个连接
+            mode: connection
+            # 缓存的连接数,只有当mode为CONNECTION时才适用
+            size: 10
+        # 监听器
+        listener:
+          simple:
+            # 容器的确认模式 NONE:不开启; MANUAL:手动; AUTO:自动(通过是否抛出异常来判定)
+            acknowledge-mode: auto
+            # 启动时自动启动容器
+            auto-startup: true
+            # 最小消费者数,,每个监听器类的,当并发过大时,会自动增长消费者数
+            concurrency: 1
+            # 最大消费者数
+            max-concurrency: 10
+            # 消费失败后是否重新排队
+            default-requeue-rejected: true
+            # 单个请求处理的消息个数, 它 >= 事务数量(如果使用事务)
+            prefetch: 10
+            # 一个事务中处理的消息数量,最好应该 <= prefetch
+            transaction-size: 10
+            # 容器每空闲毫秒,触发一次该事件
+            idle-event-interval:
+            # 重试机制
+            retry:
+              # 是否启用重试
+              enabled: true
+              # 第一次和第二次 尝试发布或交付(此处是消费者交付,template.retry中是消费者发布)的 间隔时间
+              initial-interval: 1000
+              # 两次重试的最大间隔
+              max-interval: 10000
+              # 尝试发布或交付的 最大次数(重试次数)
+              max-attempts: 3
+              # 每次重试都比上一次重试间隔时长大x倍
+              multiplier: 1.0
+              # 重试是无状态还是有状态的
+              stateless: true
+        # 发送模版类
+        template:
+          # 启用强制消息接收(如果消息未到达,会返回到对应监听器)
+          mandatory: true
+          # receive()方法超时时间
+          receive-timeout: 10000
+          #  sendAndReceive()方法超时时间
+          reply-timeout: 5000
+          # 重试机制(具体参数和listener的重试机制雷同)
+          retry:
+            enabled: true
+        # ssl证书相关    
+    #    ssl:
+    #    virtual-host: #连接到rabbitmq的虚拟主机时配置
+    #    addresses: #逗号分割的地址列表,用于集群地址
+    #    username:
+    #    password:
+>
+* 类
+    * 配置类
+    >
+        /**
+         * author:ZhengXing
+         * datetime:2018/1/19 0019 10:03
+         * RabbitMQ配置类
+         */
+        @Configuration
+        public class AmqpConfig {
+        
+        	/**
+        	 * 声明一个队列,可以查看其构造函数,有多的参数可以设置
+        	 */
+        	@Bean
+        	public Queue helloQueue() {
+        		return new Queue("hello");
+        	}
+        
+        	/**
+        	 * 声明一个匿名队列
+        	 * 该队列是匿名的,独占的,非持久的,自动删除的.
+        	 */
+        	@Bean
+        	public Queue anonymousQueue1() {
+        		return new AnonymousQueue();
+        	}
+        
+        	/**
+        	 * 声明一个交换器
+        	 */
+        	@Bean
+        	public FanoutExchange fanoutExchange() {
+        		return new FanoutExchange("zx.test");
+        	}
+        
+        	/**
+        	 * 将交换器和队列绑定
+        	 */
+        	@Bean
+        	public Binding binding1(Queue anonymousQueue1, FanoutExchange fanoutExchange) {
+        		//绑定该队列 到 该交换器
+        		return BindingBuilder.bind(anonymousQueue1).to(fanoutExchange);
+        	}
+        
+        	/**
+        	 * 注入自定义发送器
+        	 */
+        	@Bean
+        	public CustomSender customSender() {
+        		return new CustomSender();
+        	}
+        
+        	/**
+        	 * 注入自定义接收器1
+        	 */
+        	@Bean
+        	public CustomReceiver customReceiver1() {
+        		return new CustomReceiver(1);
+        	}
+        	/**
+        	 * 注入自定义接收器2
+        	 */
+        	@Bean
+        	public CustomReceiver customReceiver2() {
+        		return new CustomReceiver(2);
+        	}
+        }
+    >
+    * 消费者
+    >
+        /**
+         * author:ZhengXing
+         * datetime:2018/1/19 0019 10:16
+         * 自定义接收器
+         */
+        //表示该类是mq的监听器,并监听hello队列
+        @RabbitListener(queues = "hello")
+        public class CustomReceiver {
+        
+        	//标识当前对象id
+        	private final int instance;
+        
+        	//构造时传入id
+        	public CustomReceiver(int instance) {
+        		this.instance = instance;
+        	}
+        
+        	/**
+        	 * 收到消息的处理方法
+        	 */
+        	@RabbitHandler
+        	public void receive(String in) throws InterruptedException {
+        		//计时器
+        		StopWatch stopWatch = new StopWatch();
+        		//开始计时
+        		stopWatch.start();
+        		System.out.println("实例:" + instance +" 接收到消息:" + in + " 线程id:" + Thread.currentThread().getId());
+        		//模拟长时间消费
+        		doWork(in);
+        		stopWatch.stop();
+        		System.out.println("实例:" + instance +" 消费消息完毕:" + in + "消费时常:"+ stopWatch.getTotalTimeSeconds() + " 线程id:" + Thread.currentThread().getId());
+        	}
+        
+        	/**
+        	 * 根据接收到的消息中的 "."字符的个数,暂停对应描述,模拟长时间任务
+        	 */
+        	private void doWork(String in) throws InterruptedException {
+        		for (char ch : in.toCharArray()) {
+        			if (ch == '.') {
+        				Thread.sleep(1000);
+        			}
+        		}
+        	}
+        }
+    >
+    * 生产者
+    >
+        /**
+         * author:ZhengXing
+         * datetime:2018/1/19 0019 10:08
+         * 自定义发送者
+         */
+        public class CustomSender {
+        
+        	@Autowired
+        	public RabbitTemplate rabbitTemplate;
+        
+        	@Autowired
+        	private Queue helloQueue;
+        
+        
+        	//定时发送
+        	@Scheduled(fixedDelay = 60000,initialDelay = 1000)
+        	public void send() {
+        		for (int i = 0; i < 100; i++) {
+        			String m = "xxx" + ".....";
+        			rabbitTemplate.convertAndSend(helloQueue.getName(),m);
+        			System.out.println("发送:" + m);
+        		}
+        	}
+        }
+    >
+
+
